@@ -14,7 +14,7 @@ resource "aws_lb" "main" {
 }
 
 resource "aws_lb_target_group" "stable" {
-  name                 = "${var.project_name}-${var.environment}-tg-stable"
+  name                 = "tg-stable-${var.environment}"
   port                 = var.application_port
   protocol             = "HTTP"
   vpc_id               = var.vpc_id
@@ -37,7 +37,7 @@ resource "aws_lb_target_group" "stable" {
 }
 
 resource "aws_lb_target_group" "canary" {
-  name                 = "${var.project_name}-${var.environment}-tg-canary"
+  name                 = "tg-canary-${var.environment}"
   port                 = var.application_port
   protocol             = "HTTP"
   vpc_id               = var.vpc_id

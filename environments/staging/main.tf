@@ -127,4 +127,5 @@ module "github-oidc" {
   github_org              = "nithingowdahm87"
   github_repository       = "Octa-Byte-AI-Application"
   github_branch           = "stage"
+  github_environment      = "staging"
 }

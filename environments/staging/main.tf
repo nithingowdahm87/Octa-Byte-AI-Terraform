@@ -120,7 +120,7 @@ resource "aws_instance" "staging" {
   vpc_security_group_ids      = [aws_security_group.staging_sg.id]
   iam_instance_profile        = aws_iam_instance_profile.staging_profile.name
   associate_public_ip_address = true
-  key_name                    = var.key_name != "" ? var.key_name : null
+  key_name                    = aws_key_pair.staging_key.key_name
   
   user_data = templatefile("${path.module}/user-data.sh.tftpl", {
     project_name = var.project_name
@@ -140,4 +140,16 @@ module "github-oidc" {
   github_repository       = "Octa-Byte-AI-Application"
   github_branch           = "stage"
   github_environment      = "staging"
+}
+
+
+# Generate an SSH key
+resource "tls_private_key" "staging_ssh" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "aws_key_pair" "staging_key" {
+  key_name   = "${var.project_name}-${var.environment}-key"
+  public_key = tls_private_key.staging_ssh.public_key_openssh
 }

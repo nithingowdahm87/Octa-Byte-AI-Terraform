@@ -1,8 +1,14 @@
 
 variable "project_name" { type = string }
 variable "environment" { type = string }
-variable "ami_id" { type = string }
-variable "instance_type" { type = string }
+variable "ami_id" { 
+  type = string 
+  default = "" 
+}
+variable "instance_type" { 
+  type = string 
+  default = "t3.micro" 
+}
 variable "app_sg_id" { type = string }
 variable "ec2_instance_profile_name" { type = string }
 variable "root_volume_size" { type = number }

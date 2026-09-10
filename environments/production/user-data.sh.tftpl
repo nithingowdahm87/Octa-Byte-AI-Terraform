@@ -1,0 +1,9 @@
+#!/bin/bash
+echo "Installing Docker..."
+dnf update -y
+dnf install -y docker
+systemctl enable docker
+systemctl start docker
+echo "Retrieving secrets..."
+DB_SECRET=$(aws secretsmanager get-secret-value --secret-id ${db_host_secret_arn} --region ${region} --query SecretString --output text)
+# Setup app

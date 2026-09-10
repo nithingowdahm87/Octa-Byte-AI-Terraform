@@ -2,4 +2,12 @@
 .terraform.lock.hcl
 *.tfstate
 *.tfstate.backup
+*.tfplan
+crash.log
+*.bak
+*.orig
+*~
 .DS_Store
+.env
+terraform.tfvars
+!terraform.tfvars.example

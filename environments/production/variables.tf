@@ -28,3 +28,5 @@ variable "tags" { default = {
 } }
 variable "blue_weight" { default = 100 }
 variable "green_weight" { default = 0 }
+variable "stable_weight" { default = 100 }
+variable "canary_weight" { default = 0 }

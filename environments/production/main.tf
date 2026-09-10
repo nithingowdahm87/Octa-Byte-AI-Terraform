@@ -78,23 +78,19 @@ module "alb-canary" {
   enable_https                   = false
   acm_certificate_arn            = ""
   tags                           = var.tags
-  blue_weight                    = var.blue_weight
-  green_weight                   = var.green_weight
+  stable_weight                    = var.stable_weight
+  canary_weight                   = var.canary_weight
 }
 
 module "iam" {
   source       = "../../modules/iam"
   project_name = var.project_name
   environment  = var.environment
-  secrets_arn  = module.secrets.rds_secret_arn
-  kms_key_arn  = module.kms.rds_kms_key_arn
 
 
 
 
 
-  db_master_username = var.db_username
-  db_backup_retention_days = 7
   tags         = var.tags
 }
 

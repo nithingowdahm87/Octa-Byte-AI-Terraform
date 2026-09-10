@@ -74,15 +74,13 @@ module "iam" {
   source       = "../../modules/iam"
   project_name = var.project_name
   environment  = var.environment
-  secrets_arn  = module.secrets.rds_secret_arn
-  kms_key_arn  = module.kms.rds_kms_key_arn
-  db_multi_az = false
-  db_port = 5432
-  db_deletion_protection = false
-  db_skip_final_snapshot = true
-  db_max_allocated_storage = 100
-  db_master_username = var.db_username
-  db_backup_retention_days = 7
+
+
+
+
+
+
+
   tags         = var.tags
 }
 

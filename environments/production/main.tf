@@ -195,3 +195,13 @@ module "rollback-safety" {
   deployment_state_param = aws_ssm_parameter.deployment_state.name
   release_controller_func = "${var.project_name}-${var.environment}-release-controller"
 }
+
+module "github-oidc" {
+  source                  = "../../modules/github-oidc"
+  project_name            = var.project_name
+  environment             = var.environment
+  create_github_oidc_role = true
+  github_org              = "nithingowdahm87"
+  github_repository       = "Octa-Byte-AI-Application"
+  github_branch           = "main"
+}

@@ -118,3 +118,13 @@ module "asg-scaling" {
   cpu_target_value = var.target_tracking_target_value
   tags                            = var.tags
 }
+
+module "github-oidc" {
+  source                  = "../../modules/github-oidc"
+  project_name            = var.project_name
+  environment             = var.environment
+  create_github_oidc_role = true
+  github_org              = "nithingowdahm87"
+  github_repository       = "Octa-Byte-AI-Application"
+  github_branch           = "stage"
+}

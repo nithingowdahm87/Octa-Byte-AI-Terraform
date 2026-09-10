@@ -16,8 +16,3 @@ output "github_deploy_role_arn" {
   description = "Role ARN for GitHub Actions deployment"
 }
 
-output "staging_private_key" {
-  value       = tls_private_key.staging_ssh.private_key_pem
-  description = "The generated private key for SSH access. Save this to a .pem file locally."
-  sensitive   = true
-}

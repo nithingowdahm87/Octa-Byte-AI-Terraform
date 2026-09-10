@@ -10,10 +10,10 @@ output "alb_arn_suffix" {
   value = aws_lb.main.arn_suffix
 }
 
-output "target_group_blue_arn" {
-  value = aws_lb_target_group.blue.arn
+output "target_group_stable_arn" {
+  value = aws_lb_target_group.stable.arn
 }
 
-output "target_group_green_arn" {
-  value = aws_lb_target_group.green.arn
+output "target_group_canary_arn" {
+  value = aws_lb_target_group.canary.arn
 }

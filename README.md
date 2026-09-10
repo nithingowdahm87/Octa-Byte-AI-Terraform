@@ -1,56 +1,43 @@
-# OctaByte-Nithin Infrastructure
+# OctaByte-Nithin Infrastructure (Terraform)
 
-This repository contains the Terraform infrastructure code for the OctaByte-Nithin project.
-It provisions a robust, multi-tier AWS architecture with dedicated environments for `staging` and `production`.
+This repository provisions the secure, VPC-isolated infrastructure for the OctaByte-Nithin project.
 
 ## Architecture
 
-The architecture consists of two completely isolated environments, each in its own VPC.
+- **Staging VPC (10.10.0.0/16)**: Single ASG, isolated test environment.
+- **Production VPC (10.20.0.0/16)**: Canary release environment containing two Auto Scaling Groups (Stable and Canary).
 
-- **Staging VPC**: `10.10.0.0/16`
-- **Production VPC**: `10.20.0.0/16`
+### Real Canary Deployment
 
-Each VPC contains:
-- Public subnets for Application Load Balancers and NAT/Bastion (if applicable).
-- Private app subnets for the EC2 Auto Scaling Groups.
-- Private db subnets for the RDS instances.
-- VPC Endpoints for Systems Manager (SSM) to allow secure shell access without public IPs.
+Unlike a Blue/Green cutover, this environment performs a true Canary release:
+- `Stable` ASG and `Canary` ASG receive independent AWS Lambda-controlled traffic weights (e.g. 50/50).
+- The `release-controller` Lambda adjusts ALB Listener Rules, preventing Terraform state drift during live traffic shifts.
+- If CloudWatch Composite Alarms detect elevated 5XX errors or latency during the 5-minute canary window, an SNS-triggered `rollback-safety` Lambda automatically reverts weights to `100/0` instantly.
 
-### Compute (EC2)
-EC2 instances run on `t3.micro` which is AWS Free Tier eligible.
-Instead of a hardcoded AMI, the compute module dynamically resolves the latest **Amazon Linux 2023** AMI via AWS Systems Manager Parameter Store (`/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64`), ensuring the instances always boot with the latest patched OS kernel while remaining free-tier eligible.
+### EC2 Bootstrap (Immutable Deployment)
 
-*Note: Free tier eligibility for `t3.micro` depends on your AWS account's age and region.*
+EC2 instances use **Amazon Linux 2023** dynamically resolved via SSM Parameter Store.
+`user-data` uses `dnf` to install `docker`, `amazon-cloudwatch-agent`, and `amazon-ssm-agent`.
+Images are deployed exclusively by their immutable `sha256` digest via VPC endpoints, removing the need for SSH access.
 
-### Canary Deployment (Production Only)
+## Runbook
 
-Production deployments use a true Canary Rollout pattern without relying on CodeDeploy.
-- **Components**: 2 Auto Scaling Groups (Blue/Green), 2 Target Groups, and 1 ALB.
-- **Traffic Shift**: GitHub Actions orchestrates the shift. It deploys the new code to the idle ASG, shifts ALB listener weights to 50/50, and holds for 5 minutes.
-- **Wait Loop**: During the 5-minute hold, a GitHub Actions polling loop continuously checks a CloudWatch composite alarm (5XX errors OR High Latency).
-- **Finalize/Rollback**: If the alarm triggers, traffic is instantly rolled back to 100% on the old ASG and the pipeline fails. If the hold completes successfully, traffic is shifted to 100% on the new ASG.
-
-## GitHub Actions & CI/CD
-
-Both the Application and Terraform repositories are fully driven by GitHub Actions pipelines, notifying the `#octa-byte-ai` Slack channel.
-
-- **AWS Authentication**: OIDC (OpenID Connect) federation is used exclusively. There are no static AWS credentials.
-- **Staging Pipeline (App)**: Triggered on push to `stage`. Runs Pytest, SonarQube, Trivy SCA, Docker Build, Trivy Image Scan, and SSM Deployment.
-- **Production Pipeline (App)**: Triggered on PR and Merge to `main`. Pre-merge validates with OWASP ZAP. Post-merge executes the Canary Rollout.
-- **Terraform Pipeline**: Runs `tfsec`/`checkov`, `terraform plan` on PRs, and `terraform apply` on merge to `main`.
-
-## Usage
-
+### Terraform Bootstrap
 ```bash
-# Initialize bootstrap
 make bootstrap-init
 make bootstrap-apply
+```
 
-# Plan/Apply staging
+### Staging Apply
+```bash
 ENV=staging make init
 ENV=staging make plan
 ENV=staging make apply
 ```
 
-## Repository Cleanup
-In the v3 refactor, legacy artifacts such as `dev` environments, `fix_vars.py`, and empty placeholder files were removed to ensure repository hygiene.
+### Manual Rollback
+If a deployment degrades and the auto-rollback safety net fails:
+1. Log into AWS Console -> Lambda.
+2. Invoke `octabyte-nithin-production-release-controller` with:
+   `{"environment": "production", "stable_weight": 100, "canary_weight": 0, "deployment_id": "manual"}`
+3. The active slot (tracked in `/octabyte-nithin/production/active-slot`) will instantly receive 100% traffic.

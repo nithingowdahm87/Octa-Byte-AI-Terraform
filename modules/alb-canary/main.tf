@@ -13,8 +13,8 @@ resource "aws_lb" "main" {
   })
 }
 
-resource "aws_lb_target_group" "blue" {
-  name                 = "${var.project_name}-${var.environment}-tg-blue"
+resource "aws_lb_target_group" "stable" {
+  name                 = "${var.project_name}-${var.environment}-tg-stable"
   port                 = var.application_port
   protocol             = "HTTP"
   vpc_id               = var.vpc_id
@@ -33,11 +33,11 @@ resource "aws_lb_target_group" "blue" {
     matcher             = "200"
   }
 
-  tags = merge(var.tags, { Name = "${var.project_name}-${var.environment}-tg-blue" })
+  tags = merge(var.tags, { Name = "${var.project_name}-${var.environment}-tg-stable" })
 }
 
-resource "aws_lb_target_group" "green" {
-  name                 = "${var.project_name}-${var.environment}-tg-green"
+resource "aws_lb_target_group" "canary" {
+  name                 = "${var.project_name}-${var.environment}-tg-canary"
   port                 = var.application_port
   protocol             = "HTTP"
   vpc_id               = var.vpc_id
@@ -56,7 +56,7 @@ resource "aws_lb_target_group" "green" {
     matcher             = "200"
   }
 
-  tags = merge(var.tags, { Name = "${var.project_name}-${var.environment}-tg-green" })
+  tags = merge(var.tags, { Name = "${var.project_name}-${var.environment}-tg-canary" })
 }
 
 resource "aws_lb_listener" "http" {
@@ -80,15 +80,18 @@ resource "aws_lb_listener" "http" {
       for_each = var.enable_https ? [] : [1]
       content {
         target_group {
-          arn    = aws_lb_target_group.blue.arn
-          weight = var.blue_weight
+          arn    = aws_lb_target_group.stable.arn
+          weight = var.stable_weight
         }
         target_group {
-          arn    = aws_lb_target_group.green.arn
-          weight = var.green_weight
+          arn    = aws_lb_target_group.canary.arn
+          weight = var.canary_weight
         }
       }
     }
+  }
+  lifecycle {
+    ignore_changes = [default_action]
   }
 }
 
@@ -105,13 +108,16 @@ resource "aws_lb_listener" "https" {
 
     forward {
       target_group {
-        arn    = aws_lb_target_group.blue.arn
-        weight = var.blue_weight
+        arn    = aws_lb_target_group.stable.arn
+        weight = var.stable_weight
       }
       target_group {
-        arn    = aws_lb_target_group.green.arn
-        weight = var.green_weight
+        arn    = aws_lb_target_group.canary.arn
+        weight = var.canary_weight
       }
     }
+  }
+  lifecycle {
+    ignore_changes = [default_action]
   }
 }

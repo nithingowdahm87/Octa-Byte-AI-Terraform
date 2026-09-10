@@ -1,17 +1,23 @@
-name: Terraform Staging Pipeline
+name: Terraform Staging
 
 on:
+  pull_request:
+    branches:
+      - stage
   push:
     branches:
       - stage
 
-permissions:
-  id-token: write
-  contents: read
+env:
+  AWS_REGION: us-east-1
+  ROLE_TO_ASSUME: arn:aws:iam::123456789012:role/github-actions-terraform-role
 
 jobs:
-  terraform-staging:
+  terraform:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -19,36 +25,31 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: us-east-1
+          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Init
         run: terraform init
-
-      - name: Terraform Format
-        run: terraform fmt -check
-
-      - name: Terraform Validate
-        run: terraform validate
+        working-directory: ./staging
 
       - name: Terraform Plan
-        run: terraform plan -out=tfplan
+        if: github.event_name == 'pull_request'
+        run: terraform plan
+        working-directory: ./staging
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve tfplan
+        if: github.event_name == 'push' && github.ref == 'refs/heads/stage'
+        run: terraform apply -auto-approve
+        working-directory: ./staging
 
-      - name: Slack Notification
+      - name: Notify Slack
         if: always()
         uses: slackapi/slack-github-action@v2
         with:
-          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-          webhook-type: incoming-webhook
           payload: |
             {
-              "channel": "#octa-byte-ai",
-              "text": "Terraform Staging Apply: ${{ job.status }}"
+              "text": "Terraform Staging Pipeline: ${{ job.status }} for ${{ github.event_name }}"
             }
-

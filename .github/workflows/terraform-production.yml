@@ -1,21 +1,23 @@
-name: Terraform Production Pipeline
+name: Terraform Production
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - main
 
-permissions:
-  id-token: write
-  contents: read
+env:
+  AWS_REGION: us-east-1
+  ROLE_TO_ASSUME: arn:aws:iam::123456789012:role/github-actions-terraform-role
 
 jobs:
-  terraform-plan:
-    if: github.event_name == 'pull_request'
+  terraform:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,61 +25,31 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: us-east-1
+          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Init
         run: terraform init
+        working-directory: ./production
 
       - name: Terraform Plan
+        if: github.event_name == 'pull_request'
         run: terraform plan
-
-      - name: Slack Notification
-        if: always()
-        uses: slackapi/slack-github-action@v2
-        with:
-          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-          webhook-type: incoming-webhook
-          payload: |
-            {
-              "channel": "#octa-byte-ai",
-              "text": "Terraform Production Plan: ${{ job.status }}"
-            }
-
-  terraform-apply:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: us-east-1
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform Init
-        run: terraform init
+        working-directory: ./production
 
       - name: Terraform Apply
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: terraform apply -auto-approve
+        working-directory: ./production
 
-      - name: Slack Notification
+      - name: Notify Slack
         if: always()
         uses: slackapi/slack-github-action@v2
         with:
-          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-          webhook-type: incoming-webhook
           payload: |
             {
-              "channel": "#octa-byte-ai",
-              "text": "Terraform Production Apply: ${{ job.status }}"
+              "text": "Terraform Production Pipeline: ${{ job.status }} for ${{ github.event_name }}"
             }
-

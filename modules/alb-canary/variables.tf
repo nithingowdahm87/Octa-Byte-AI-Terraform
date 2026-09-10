@@ -10,12 +10,12 @@ variable "enable_https" { type = bool }
 variable "acm_certificate_arn" { type = string }
 variable "tags" { type = map(string) }
 
-variable "blue_weight" {
+variable "stable_weight" {
   type    = number
   default = 100
 }
 
-variable "green_weight" {
+variable "canary_weight" {
   type    = number
   default = 0
 }

@@ -120,3 +120,14 @@ resource "aws_instance" "staging" {
     Name = "${var.project_name}-${var.environment}-ec2"
   })
 }
+
+module "github-oidc" {
+  source                  = "../../modules/github-oidc"
+  project_name            = var.project_name
+  environment             = var.environment
+  create_github_oidc_role = true
+  github_org              = "nithingowdahm87"
+  github_repository       = "Octa-Byte-AI-Application"
+  github_branch           = "stage"
+  github_environment      = "staging"
+}

@@ -4,5 +4,5 @@ variable "aws_region" {
 }
 variable "project_name" {
   type    = string
-  default = "three-tier-app"
+  default = "octa-byte-ai-Nithin"
 }

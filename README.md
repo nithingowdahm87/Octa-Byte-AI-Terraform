@@ -41,3 +41,19 @@ If a deployment degrades and the auto-rollback safety net fails:
 2. Invoke `octabyte-nithin-production-release-controller` with:
    `{"environment": "production", "stable_weight": 100, "canary_weight": 0, "deployment_id": "manual"}`
 3. The active slot (tracked in `/octabyte-nithin/production/active-slot`) will instantly receive 100% traffic.
+
+## Environments
+
+### Staging (Free Tier)
+The staging environment is designed to minimize costs and fit within the AWS Free Tier. It uses:
+- A single `t3.micro` EC2 instance in the default VPC
+- Local Postgres (via Docker, if added) or mock database rather than RDS
+- A single Elastic IP (implicitly public IP via EC2) rather than an ALB
+- No ASG or NAT Gateways
+
+### Production
+The production environment uses a highly available architecture:
+- Custom VPC with public and private subnets across multiple AZs
+- Application Load Balancer (ALB)
+- Auto Scaling Group (ASG)
+- Amazon RDS for PostgreSQL

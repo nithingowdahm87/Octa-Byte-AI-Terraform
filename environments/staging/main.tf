@@ -1,131 +1,125 @@
-module "vpc" {
-  source                   = "../../modules/vpc"
-  project_name             = var.project_name
-  environment              = var.environment
-  vpc_cidr                 = var.vpc_cidr
-  availability_zone_count  = var.availability_zone_count
-  public_subnet_cidrs      = var.public_subnet_cidrs
-  private_app_subnet_cidrs = var.private_app_subnet_cidrs
-  private_db_subnet_cidrs  = var.private_db_subnet_cidrs
-  tags                     = var.tags
+provider "aws" {
+  region = var.aws_region
 }
 
-module "security-groups" {
-  source       = "../../modules/security-groups"
-  project_name = var.project_name
-  environment  = var.environment
-  vpc_id       = module.vpc.vpc_id
-  tags         = var.tags
+# Data Sources
+data "aws_vpc" "default" {
+  default = true
 }
 
-module "secrets" {
-  source       = "../../modules/secrets"
-  project_name = var.project_name
-  environment  = var.environment
-  tags         = var.tags
+data "aws_subnets" "default_public" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
 }
 
-module "rds" {
-  source               = "../../modules/rds"
-  project_name         = var.project_name
-  environment          = var.environment
-  private_db_subnet_ids = module.vpc.private_db_subnets
-  rds_sg_id = module.security-groups.rds_sg_id
-  db_instance_class    = var.db_instance_class
-  db_allocated_storage = var.db_allocated_storage
-  db_name              = var.db_name
-  db_master_password = "dummy"
-  rds_kms_key_arn = module.kms.rds_kms_key_arn
-  db_multi_az = false
-  db_port = 5432
-  db_deletion_protection = false
-  db_skip_final_snapshot = true
-  db_max_allocated_storage = 100
-  db_master_username = var.db_username
-  db_backup_retention_days = 0
-  tags                 = var.tags
+data "aws_ssm_parameter" "amazon_linux_2023" {
+  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 }
 
-module "kms" {
-  enable_key_rotation = true
-  delete_wait_days = 7
-  source       = "../../modules/kms"
-  project_name = var.project_name
-  environment  = var.environment
-  tags         = var.tags
-}
+# IAM Role & Instance Profile
+resource "aws_iam_role" "staging_ec2_role" {
+  name = "${var.project_name}-${var.environment}-ec2-role"
 
-module "alb" {
-  source                         = "../../modules/alb"
-  project_name                   = var.project_name
-  environment                    = var.environment
-  vpc_id                         = module.vpc.vpc_id
-  public_subnet_ids              = module.vpc.public_subnets
-  alb_sg_id                      = module.security-groups.alb_sg_id
-  application_port               = var.application_port
-  health_check_path              = var.health_check_path
-  alb_enable_deletion_protection = var.alb_enable_deletion_protection
-  enable_https                   = false
-  acm_certificate_arn            = ""
-  tags                           = var.tags
-}
-
-module "iam" {
-  source       = "../../modules/iam"
-  project_name = var.project_name
-  environment  = var.environment
-
-
-
-
-
-
-
-  tags         = var.tags
-}
-
-module "compute" {
-  source                     = "../../modules/compute"
-  project_name               = var.project_name
-  environment                = var.environment
-  app_sg_id                  = module.security-groups.ec2_sg_id
-  ec2_instance_profile_name  = module.iam.ec2_instance_profile_name
-  root_volume_size           = var.root_volume_size
-  root_volume_type           = var.root_volume_type
-  ebs_kms_key_arn            = module.kms.ebs_kms_key_arn
-  enable_detailed_monitoring = var.enable_detailed_monitoring
-  user_data                  = templatefile("${path.module}/user-data.sh.tftpl", {
-    db_host_secret_arn = module.secrets.rds_secret_arn
-    region             = var.aws_region
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
   })
-  tags                       = var.tags
+  tags = var.tags
 }
 
-module "asg-scaling" {
-  source                          = "../../modules/asg-scaling"
-  project_name                    = var.project_name
-  environment                     = var.environment
-  launch_template_id              = module.compute.launch_template_id
-  instance_warmup_seconds = 300
-  #  module.compute.launch_template_latest_version
-  private_app_subnet_ids = module.vpc.private_app_subnets
-  target_group_arn = module.alb.target_group_arn
-  asg_min_size = var.asg_min_size
-  asg_max_size = var.asg_max_size
-  asg_desired_capacity = var.asg_desired_capacity
-  # health_check_type = "ELB"
-  # health_check_grace_period = 300
-  cpu_target_value = var.target_tracking_target_value
-  tags                            = var.tags
+resource "aws_iam_role_policy_attachment" "ssm_core" {
+  role       = aws_iam_role.staging_ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-module "github-oidc" {
-  source                  = "../../modules/github-oidc"
-  project_name            = var.project_name
-  environment             = var.environment
-  create_github_oidc_role = true
-  github_org              = "nithingowdahm87"
-  github_repository       = "Octa-Byte-AI-Application"
-  github_branch           = "stage"
-  github_environment      = "staging"
+resource "aws_iam_role_policy_attachment" "cloudwatch_agent" {
+  role       = aws_iam_role.staging_ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
+resource "aws_iam_role_policy" "ecr_read_only" {
+  name = "${var.project_name}-${var.environment}-ecr-ro"
+  role = aws_iam_role.staging_ec2_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_instance_profile" "staging_profile" {
+  name = "${var.project_name}-${var.environment}-profile"
+  role = aws_iam_role.staging_ec2_role.name
+}
+
+# Security Group
+resource "aws_security_group" "staging_sg" {
+  name        = "${var.project_name}-${var.environment}-sg"
+  description = "Security group for staging EC2"
+  vpc_id      = data.aws_vpc.default.id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTP inbound"
+  }
+
+  egress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTPS outbound (SSM, ECR, API)"
+  }
+
+  egress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTP outbound (yum/dnf)"
+  }
+
+  tags = var.tags
+}
+
+# EC2 Instance
+resource "aws_instance" "staging" {
+  ami                         = data.aws_ssm_parameter.amazon_linux_2023.value
+  instance_type               = var.instance_type
+  subnet_id                   = var.staging_subnet_id != "" ? var.staging_subnet_id : data.aws_subnets.default_public.ids[0]
+  vpc_security_group_ids      = [aws_security_group.staging_sg.id]
+  iam_instance_profile        = aws_iam_instance_profile.staging_profile.name
+  associate_public_ip_address = true
+  
+  user_data = templatefile("${path.module}/user-data.sh.tftpl", {
+    project_name = var.project_name
+  })
+
+  tags = merge(var.tags, {
+    Name = "${var.project_name}-${var.environment}-ec2"
+  })
 }

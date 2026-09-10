@@ -1,9 +1,10 @@
 #!/bin/bash
 set -e
+exec > >(tee -a /var/log/user-data.log) 2>&1
 
 # 1. Install packages
 dnf update -y
-dnf install -y docker awscli jq amazon-cloudwatch-agent
+dnf install -y docker docker-compose-plugin awscli jq amazon-cloudwatch-agent
 
 # 2. Enable and start docker
 systemctl enable --now docker
@@ -11,18 +12,19 @@ systemctl enable --now docker
 # 3. Add ec2-user to docker group
 usermod -aG docker ec2-user
 
-# 4. Enable amazon-ssm-agent
+# 4. Enable amazon-ssm-agent and cloudwatch agent
 systemctl enable --now amazon-ssm-agent
+systemctl enable --now amazon-cloudwatch-agent
 
 # 5. Create directories
 mkdir -p /opt/octabyte-nithin/bin /opt/octabyte-nithin/compose /var/log/octabyte-nithin
 chmod 0755 /opt/octabyte-nithin/bin /opt/octabyte-nithin/compose /var/log/octabyte-nithin
 
-# 6. Write deploy.sh
-cat << 'EOF' > /opt/octabyte-nithin/bin/deploy.sh
+# 6. Write deploy-staging.sh
+cat << 'INNER_EOF' > /opt/octabyte-nithin/bin/deploy-staging.sh
 #!/bin/bash
 set -e
-exec > >(tee -a /var/log/octabyte-nithin/deploy.log) 2>&1
+exec > >(tee -a /var/log/octabyte-nithin/deploy-staging.log) 2>&1
 
 IMAGE_URI=$1
 
@@ -39,53 +41,26 @@ fi
 echo "Deploying $IMAGE_URI"
 
 ECR_REGISTRY=$(echo "$IMAGE_URI" | cut -d/ -f1)
-# ECR registry format is account_id.dkr.ecr.region.amazonaws.com
 REGION=$(echo "$ECR_REGISTRY" | cut -d. -f4)
 
+# Authenticate to ECR
 aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
-DB_SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id ${db_host_secret_arn} --region ${region} --query SecretString --output text)
-DB_HOST=$(echo "$DB_SECRET_JSON" | jq -r '.host // empty')
-DB_PASS=$(echo "$DB_SECRET_JSON" | jq -r '.password // empty')
-DB_USER=$(aws ssm get-parameter --name "/octabyte-nithin/db/username" --with-decryption --region ${region} --query Parameter.Value --output text 2>/dev/null || echo "admin")
-DB_NAME=$(echo "$DB_SECRET_JSON" | jq -r '.dbname // empty')
-
-cat << INNER_EOF > /opt/octabyte-nithin/compose/.env.runtime
-DB_HOST=$DB_HOST
-DB_PASS=$DB_PASS
-DB_USER=$DB_USER
-DB_NAME=$DB_NAME
-INNER_EOF
-
-# Save atomic rollback records before starting
-if [ -f /opt/octabyte-nithin/compose/docker-compose.aws.yml ]; then
-    cp /opt/octabyte-nithin/compose/docker-compose.aws.yml /opt/octabyte-nithin/compose/previous-compose.yml
-fi
-if [ -f /opt/octabyte-nithin/current-image-uri ]; then
-    cp /opt/octabyte-nithin/current-image-uri /opt/octabyte-nithin/previous-image-uri
-fi
-echo "$IMAGE_URI" > /opt/octabyte-nithin/current-image-uri
-
-cat << INNER_EOF > /opt/octabyte-nithin/compose/docker-compose.aws.yml
+# Write docker-compose.staging.yml
+cat << COMPOSE_EOF > /opt/octabyte-nithin/compose/docker-compose.staging.yml
 services:
   app:
     image: $IMAGE_URI
-    env_file: .env.runtime
     ports:
-      - "5000:5000"
+      - "80:5000"
     restart: always
-  nginx:
-    image: nginx:latest
-    ports:
-      - "80:80"
-    depends_on:
-      - app
-    restart: always
-INNER_EOF
+    environment:
+      - NODE_ENV=staging
+COMPOSE_EOF
 
 cd /opt/octabyte-nithin/compose
-docker compose -f docker-compose.aws.yml pull
-docker compose -f docker-compose.aws.yml up -d --remove-orphans
+docker compose -f docker-compose.staging.yml pull
+docker compose -f docker-compose.staging.yml up -d --remove-orphans
 
 # Healthcheck loop
 echo "Waiting for healthcheck on port 80..."
@@ -98,33 +73,17 @@ for i in {1..30}; do
 done
 echo "Healthcheck failed"
 exit 1
-EOF
-chmod +x /opt/octabyte-nithin/bin/deploy.sh
+INNER_EOF
+chmod +x /opt/octabyte-nithin/bin/deploy-staging.sh
 
-# 7. Write rollback.sh
-cat << 'EOF' > /opt/octabyte-nithin/bin/rollback.sh
+# 7. Write rollback-staging.sh
+cat << 'INNER_EOF' > /opt/octabyte-nithin/bin/rollback-staging.sh
 #!/bin/bash
 set -e
-exec > >(tee -a /var/log/octabyte-nithin/rollback.log) 2>&1
+exec > >(tee -a /var/log/octabyte-nithin/rollback-staging.log) 2>&1
 
-if [ ! -f /opt/octabyte-nithin/previous-image-uri ] || [ ! -f /opt/octabyte-nithin/compose/previous-compose.yml ]; then
-    echo "No previous state to rollback to."
-    exit 1
-fi
-
-PREVIOUS_IMAGE=$(cat /opt/octabyte-nithin/previous-image-uri)
-echo "Rolling back to $PREVIOUS_IMAGE"
-
-cp /opt/octabyte-nithin/compose/previous-compose.yml /opt/octabyte-nithin/compose/docker-compose.aws.yml
-
+echo "Rollback script placeholder - implement specific rollback logic if state tracking is added"
 cd /opt/octabyte-nithin/compose
-docker compose -f docker-compose.aws.yml up -d --remove-orphans
-
-# Restore state files
-mv /opt/octabyte-nithin/previous-image-uri /opt/octabyte-nithin/current-image-uri
-echo "Rollback completed."
-EOF
-chmod +x /opt/octabyte-nithin/bin/rollback.sh
-
-# 8. Start CloudWatch agent
-systemctl enable --now amazon-cloudwatch-agent
+docker compose -f docker-compose.staging.yml down
+INNER_EOF
+chmod +x /opt/octabyte-nithin/bin/rollback-staging.sh

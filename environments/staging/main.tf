@@ -42,7 +42,7 @@ module "rds" {
   db_skip_final_snapshot = true
   db_max_allocated_storage = 100
   db_master_username = var.db_username
-  db_backup_retention_days = 7
+  db_backup_retention_days = 0
   tags                 = var.tags
 }
 

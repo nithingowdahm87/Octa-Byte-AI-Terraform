@@ -29,4 +29,5 @@ resource "aws_cloudwatch_metric_alarm" "high_latency" {
 resource "aws_cloudwatch_composite_alarm" "canary_rollback_trigger" {
   alarm_name = "${var.project_name}-${var.environment}-canary-rollback"
   alarm_rule = "ALARM(${aws_cloudwatch_metric_alarm.high_5xx.alarm_name}) OR ALARM(${aws_cloudwatch_metric_alarm.high_latency.alarm_name})"
+  alarm_actions = [var.sns_topic_arn]
 }

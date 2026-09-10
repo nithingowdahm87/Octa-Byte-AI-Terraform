@@ -1,7 +1,7 @@
 resource "aws_ssm_parameter" "active_color" {
   name  = "/${var.project_name}/${var.environment}/active-color"
   type  = "String"
-  value = "blue"
+  value = "stable"
   
   lifecycle {
     ignore_changes = [value]
@@ -98,10 +98,10 @@ module "iam" {
   tags         = var.tags
 }
 
-module "compute-blue" {
+module "compute-stable" {
   source                     = "../../modules/compute"
   project_name               = var.project_name
-  environment                = "${var.environment}-blue"
+  environment                = "${var.environment}-stable"
   app_sg_id                  = module.security-groups.ec2_sg_id
   ec2_instance_profile_name  = module.iam.ec2_instance_profile_name
   root_volume_size           = var.root_volume_size
@@ -115,15 +115,15 @@ module "compute-blue" {
   tags                       = var.tags
 }
 
-module "asg-blue" {
+module "asg-stable" {
   source                          = "../../modules/asg-scaling"
   project_name                    = var.project_name
-  environment                     = "${var.environment}-blue"
-  launch_template_id              = module.compute-blue.launch_template_id
+  environment                     = "${var.environment}-stable"
+  launch_template_id              = module.compute-stable.launch_template_id
   instance_warmup_seconds = 300
-  #  module.compute-blue.launch_template_latest_version
+  #  module.compute-stable.launch_template_latest_version
   private_app_subnet_ids = module.vpc.private_app_subnets
-  target_group_arn = module.alb-canary.target_group_blue_arn
+  target_group_arn = module.alb-canary.target_group_stable_arn
   asg_min_size = 1 # Ensure at least 1 running here
   asg_max_size = var.asg_max_size
   asg_desired_capacity = 1
@@ -133,10 +133,10 @@ module "asg-blue" {
   tags                            = var.tags
 }
 
-module "compute-green" {
+module "compute-canary" {
   source                     = "../../modules/compute"
   project_name               = var.project_name
-  environment                = "${var.environment}-green"
+  environment                = "${var.environment}-canary"
   app_sg_id                  = module.security-groups.ec2_sg_id
   ec2_instance_profile_name  = module.iam.ec2_instance_profile_name
   root_volume_size           = var.root_volume_size
@@ -150,15 +150,15 @@ module "compute-green" {
   tags                       = var.tags
 }
 
-module "asg-green" {
+module "asg-canary" {
   source                          = "../../modules/asg-scaling"
   project_name                    = var.project_name
-  environment                     = "${var.environment}-green"
-  launch_template_id              = module.compute-green.launch_template_id
+  environment                     = "${var.environment}-canary"
+  launch_template_id              = module.compute-canary.launch_template_id
   instance_warmup_seconds = 300
-  #  module.compute-green.launch_template_latest_version
+  #  module.compute-canary.launch_template_latest_version
   private_app_subnet_ids = module.vpc.private_app_subnets
-  target_group_arn = module.alb-canary.target_group_green_arn
+  target_group_arn = module.alb-canary.target_group_canary_arn
   asg_min_size = 1
   asg_max_size = var.asg_max_size
   asg_desired_capacity = 1
@@ -169,8 +169,33 @@ module "asg-green" {
 }
 
 module "cloudwatch-rollback" {
+  sns_topic_arn = module.rollback-safety.sns_topic_arn
   source         = "../../modules/cloudwatch-rollback"
   project_name   = var.project_name
   environment    = var.environment
   alb_arn_suffix = module.alb-canary.alb_arn_suffix
+}
+
+resource "aws_ssm_parameter" "deployment_state" {
+  name  = "/${var.project_name}/${var.environment}/canary/deployment-state"
+  type  = "String"
+  value = "SUCCEEDED"
+  lifecycle { ignore_changes = [value] }
+}
+
+module "release-controller" {
+  source = "../../modules/release-controller"
+  project_name = var.project_name
+  environment = var.environment
+  listener_arn = module.alb-canary.alb_arn
+  stable_tg_arn = module.alb-canary.target_group_stable_arn
+  canary_tg_arn = module.alb-canary.target_group_canary_arn
+}
+
+module "rollback-safety" {
+  source = "../../modules/rollback-safety"
+  project_name = var.project_name
+  environment = var.environment
+  deployment_state_param = aws_ssm_parameter.deployment_state.name
+  release_controller_func = "${var.project_name}-${var.environment}-release-controller"
 }

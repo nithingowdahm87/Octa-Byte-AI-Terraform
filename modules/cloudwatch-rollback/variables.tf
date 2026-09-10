@@ -9,3 +9,4 @@ variable "max_target_response_time_seconds" {
   type = number
   default = 1.5
 }
+variable "sns_topic_arn" { type = string }

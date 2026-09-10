@@ -84,6 +84,15 @@ resource "aws_security_group" "staging_sg" {
     description = "Allow HTTP inbound"
   }
 
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow SSH inbound"
+  }
+
+
   egress {
     from_port   = 443
     to_port     = 443
@@ -111,6 +120,7 @@ resource "aws_instance" "staging" {
   vpc_security_group_ids      = [aws_security_group.staging_sg.id]
   iam_instance_profile        = aws_iam_instance_profile.staging_profile.name
   associate_public_ip_address = true
+  key_name                    = var.key_name != "" ? var.key_name : null
   
   user_data = templatefile("${path.module}/user-data.sh.tftpl", {
     project_name = var.project_name

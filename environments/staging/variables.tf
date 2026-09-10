@@ -12,3 +12,9 @@ variable "tags" { default = {
   Owner       = "nithingowdahm87"
   ManagedBy   = "Terraform"
 } }
+
+variable "key_name" {
+  description = "Optional EC2 Key Pair name for SSH access"
+  type        = string
+  default     = ""
+}

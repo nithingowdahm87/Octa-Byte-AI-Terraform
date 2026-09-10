@@ -22,7 +22,6 @@ module "secrets" {
   source       = "../../modules/secrets"
   project_name = var.project_name
   environment  = var.environment
-  db_username  = var.db_username
   tags         = var.tags
 }
 

@@ -5,7 +5,7 @@ resource "aws_autoscaling_group" "app" {
   min_size                  = var.asg_min_size
   desired_capacity          = var.asg_desired_capacity
   max_size                  = var.asg_max_size
-  health_check_type         = "EC2"
+  health_check_type         = "ELB"
   health_check_grace_period = 300
   force_delete              = true
   target_group_arns         = [var.target_group_arn]

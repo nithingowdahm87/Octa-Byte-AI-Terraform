@@ -1,6 +1,3 @@
-provider "aws" {
-  region = var.aws_region
-}
 
 # Data Sources
 data "aws_vpc" "default" {

@@ -1,0 +1,30 @@
+#!/bin/bash
+set -e
+
+# Start SSM Agent
+systemctl enable amazon-ssm-agent
+systemctl start amazon-ssm-agent
+
+# Install Docker
+yum update -y
+yum install -y docker
+systemctl enable docker
+systemctl start docker
+
+# Configure CloudWatch Agent
+yum install -y amazon-cloudwatch-agent
+
+# ECR login
+aws ecr get-login-password --region ${region} | docker login --username AWS --password-stdin ${ecr_registry}
+
+# Run app
+docker run -d \
+  --name application \
+  -p 8080:8000 \
+  -e DB_USER=${db_user} \
+  -e DB_PASS=${db_pass} \
+  -e DB_HOST=${db_host} \
+  -e DB_NAME=${db_name} \
+  -e DB_PORT=${db_port} \
+  --restart unless-stopped \
+  ${ecr_image_uri}

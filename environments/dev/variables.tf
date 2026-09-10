@@ -1,0 +1,14 @@
+variable "project_name" { default = "three-tier-app" }
+variable "environment" { default = "dev" }
+variable "aws_region" { default = "ap-south-1" }
+variable "vpc_cidr" { default = "10.0.0.0/16" }
+variable "availability_zone_count" { default = 2 }
+variable "public_subnet_cidrs" { default = ["10.0.1.0/24", "10.0.2.0/24"] }
+variable "private_app_subnet_cidrs" { default = ["10.0.11.0/24", "10.0.12.0/24"] }
+variable "private_db_subnet_cidrs" { default = ["10.0.21.0/24", "10.0.22.0/24"] }
+variable "application_port" { default = 8080 }
+variable "enable_https" { default = false }
+variable "create_bastion_host" { default = false }
+variable "enable_bastion_ssh" { default = false }
+variable "allowed_admin_cidrs" { default = ["0.0.0.0/0"] }
+variable "tags" { default = {} }

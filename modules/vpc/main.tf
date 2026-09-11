@@ -89,7 +89,7 @@ resource "aws_route_table" "private_app" {
 
   route {
     cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.nat[count.index].id
+    nat_gateway_id = var.single_nat_gateway ? aws_nat_gateway.nat[0].id : aws_nat_gateway.nat[count.index].id
   }
 
   tags = merge(var.tags, {
@@ -109,7 +109,7 @@ resource "aws_route_table" "private_db" {
 
   route {
     cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.nat[count.index].id
+    nat_gateway_id = var.single_nat_gateway ? aws_nat_gateway.nat[0].id : aws_nat_gateway.nat[count.index].id
   }
 
   tags = merge(var.tags, {
@@ -125,12 +125,12 @@ resource "aws_route_table_association" "private_db" {
 
 # NAT Gateway explicitly disabled as per requirements to avoid Elastic IP and costs
 resource "aws_eip" "nat" {
-  count  = var.availability_zone_count
+  count  = var.single_nat_gateway ? 1 : var.availability_zone_count
   domain = "vpc"
 }
 
 resource "aws_nat_gateway" "nat" {
-  count         = var.availability_zone_count
+  count         = var.single_nat_gateway ? 1 : var.availability_zone_count
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
 }

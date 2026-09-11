@@ -34,7 +34,8 @@ resource "aws_iam_role" "github_actions" {
               "repo:${var.github_org}/${var.github_repository}:environment:${var.github_environment}",
               "repo:${var.github_org}/${var.github_repository}:pull_request*",
               "repo:${var.github_org}@*/${var.github_repository}@*:ref:refs/heads/${var.github_branch}",
-              "repo:${var.github_org}@*/${var.github_repository}@*:environment:${var.github_environment}"
+              "repo:${var.github_org}@*/${var.github_repository}@*:environment:${var.github_environment}",
+              "repo:${var.github_org}@*/${var.github_repository}@*:pull_request*"
             ]
           }
         }

@@ -125,8 +125,8 @@ COMPOSE_EOF
 sed -i "s|PLACEHOLDER_IMAGE|$${IMAGE_URI}|g" /opt/octabyte-nithin/compose/docker-compose.staging.yml
 
 cd /opt/octabyte-nithin/compose
-docker compose -f docker-compose.staging.yml pull
-docker compose -f docker-compose.staging.yml up -d --remove-orphans
+docker-compose -f docker-compose.staging.yml pull
+docker-compose -f docker-compose.staging.yml up -d --remove-orphans
 
 # Healthcheck loop
 echo "Waiting for healthcheck on port 80..."
@@ -150,6 +150,6 @@ exec > >(tee -a /var/log/octabyte-nithin/rollback-staging.log) 2>&1
 
 echo "Rollback script placeholder - implement specific rollback logic if state tracking is added"
 cd /opt/octabyte-nithin/compose
-docker compose -f docker-compose.staging.yml down
+docker-compose -f docker-compose.staging.yml down
 INNER_EOF
 chmod +x /opt/octabyte-nithin/bin/rollback-staging.sh

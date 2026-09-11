@@ -140,6 +140,40 @@ resource "aws_instance" "staging" {
   })
 }
 
+module "ecr" {
+  source                  = "../../modules/ecr"
+  create_ecr_repository   = true
+  ecr_repository_name     = var.ecr_repository_name
+  ecr_image_tag           = "latest"
+  ecr_image_tag_mutability = "MUTABLE"
+  ecr_scan_on_push        = true
+  ecr_force_delete        = true
+  ecr_kms_key_arn         = null
+  tags                    = var.tags
+}
+
+resource "aws_ssm_parameter" "staging_url" {
+  name  = "/octabyte-nithin/staging/alb-url"
+  type  = "String"
+  value = aws_instance.staging.public_ip
+  tags  = var.tags
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+resource "aws_ssm_parameter" "candidate_image_uri" {
+  name  = "/octabyte-nithin/releases/candidate/image-uri"
+  type  = "String"
+  value = "placeholder"
+  tags  = var.tags
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
 module "github-oidc" {
   source                  = "../../modules/github-oidc"
   project_name            = var.project_name

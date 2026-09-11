@@ -13,6 +13,11 @@ variable "tags" { default = {
   ManagedBy   = "Terraform"
 } }
 
+variable "ecr_repository_name" {
+  type    = string
+  default = "octabyte-nithin"
+}
+
 variable "key_name" {
   description = "Optional EC2 Key Pair name for SSH access"
   type        = string

@@ -7,7 +7,10 @@ dnf update -y
 sysctl -w vm.max_map_count=262144
 echo "vm.max_map_count=262144" >> /etc/sysctl.conf
 
-dnf install -y docker docker-compose-plugin awscli jq amazon-cloudwatch-agent
+dnf install -y docker awscli jq amazon-cloudwatch-agent
+curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
 
 # 2. Enable and start docker
 systemctl enable --now docker
@@ -49,10 +52,29 @@ REGION=$(echo "$ECR_REGISTRY" | cut -d. -f4)
 # Authenticate to ECR
 aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
+# Write nginx config
+mkdir -p /opt/octabyte-nithin/compose/nginx/sites-enabled
+cat << 'NGINX_EOF' > /opt/octabyte-nithin/compose/nginx/sites-enabled/flask_project.conf
+upstream app {
+    server app:8000;
+}
+server {
+    listen 80;
+    charset utf-8;
+    location /static {
+        alias /static/;
+    }
+    location / {
+        proxy_pass http://app;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+NGINX_EOF
+
 # Write docker-compose.staging.yml
 cat << COMPOSE_EOF > /opt/octabyte-nithin/compose/docker-compose.staging.yml
-version: '3.8'
-
 services:
   nginx:
     image: nginx:alpine
@@ -63,16 +85,18 @@ services:
     networks:
       - staging_network
     volumes:
-      - ./nginx/sites-enabled:/etc/nginx/conf.d
+      - /opt/octabyte-nithin/compose/nginx/sites-enabled:/etc/nginx/conf.d
 
   app:
-    image: \$IMAGE_URI
+    image: PLACEHOLDER_IMAGE
     environment:
       - DATABASE_HOST=db
       - DATABASE_PORT=5432
       - DATABASE_NAME=postgres
       - DATABASE_USERNAME=postgres
       - DATABASE_PASSWORD=staging_password
+    expose:
+      - "8000"
     depends_on:
       - db
     networks:
@@ -96,6 +120,9 @@ networks:
 volumes:
   db_data:
 COMPOSE_EOF
+
+# Substitute actual image URI into compose file
+sed -i "s|PLACEHOLDER_IMAGE|$${IMAGE_URI}|g" /opt/octabyte-nithin/compose/docker-compose.staging.yml
 
 cd /opt/octabyte-nithin/compose
 docker compose -f docker-compose.staging.yml pull

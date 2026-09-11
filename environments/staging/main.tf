@@ -169,6 +169,7 @@ resource "aws_ssm_parameter" "candidate_image_uri" {
   tags  = var.tags
 
   lifecycle {
+    ignore_changes = [value]
   }
 }
 

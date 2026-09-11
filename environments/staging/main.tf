@@ -174,6 +174,7 @@ resource "aws_ssm_parameter" "candidate_image_uri" {
 }
 
 module "github-oidc" {
+  create_oidc_provider    = true
   source                  = "../../modules/github-oidc"
   project_name            = var.project_name
   environment             = var.environment

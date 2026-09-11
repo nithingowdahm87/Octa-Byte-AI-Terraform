@@ -38,6 +38,7 @@ resource "aws_kms_key" "keys" {
           "kms:ReEncrypt*",
           "kms:GenerateDataKey*",
           "kms:DescribeKey"
+          ,"kms:CreateGrant"
         ]
         Resource = "*"
         Condition = {

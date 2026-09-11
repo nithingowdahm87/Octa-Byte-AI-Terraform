@@ -1,9 +1,14 @@
+data "aws_caller_identity" "current" {}
 
 resource "aws_iam_openid_connect_provider" "github" {
-  count           = var.create_github_oidc_role ? 1 : 0
+  count           = var.create_oidc_provider ? 1 : 0
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1", "1c58a3a8518e8759bf075b76b750d4f2df264fcd"] # Add correct GH thumbprints
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1", "1c58a3a8518e8759bf075b76b750d4f2df264fcd"]
+}
+
+locals {
+  oidc_provider_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
 }
 
 resource "aws_iam_role" "github_actions" {
@@ -17,7 +22,7 @@ resource "aws_iam_role" "github_actions" {
         Action = "sts:AssumeRoleWithWebIdentity"
         Effect = "Allow"
         Principal = {
-          Federated = aws_iam_openid_connect_provider.github[0].arn
+          Federated = local.oidc_provider_arn
         }
         Condition = {
           StringEquals = {
@@ -40,5 +45,5 @@ resource "aws_iam_role" "github_actions" {
 resource "aws_iam_role_policy_attachment" "github_admin" {
   count      = var.create_github_oidc_role ? 1 : 0
   role       = aws_iam_role.github_actions[0].name
-  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess" # Adjust for least privilege in prod
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }

@@ -1,7 +1,7 @@
 resource "aws_ssm_parameter" "active_color" {
-  name  = "/${var.project_name}/${var.environment}/active-color"
+  name  = "/${var.project_name}/${var.environment}/active-slot"
   type  = "String"
-  value = "stable"
+  value = "blue"
   
   lifecycle {
     ignore_changes = [value]
@@ -44,7 +44,7 @@ module "rds" {
   db_instance_class    = var.db_instance_class
   db_allocated_storage = var.db_allocated_storage
   db_name              = var.db_name
-  db_master_password = "dummy"
+  db_master_password = module.secrets.rds_master_password
   rds_kms_key_arn = module.kms.rds_kms_key_arn
   db_multi_az = false
   db_port = 5432
@@ -65,8 +65,8 @@ module "kms" {
   tags         = var.tags
 }
 
-module "alb-canary" {
-  source                         = "../../modules/alb-canary"
+module "alb" {
+  source                         = "../../modules/alb-bg"
   project_name                   = var.project_name
   environment                    = var.environment
   vpc_id                         = module.vpc.vpc_id
@@ -78,8 +78,8 @@ module "alb-canary" {
   enable_https                   = false
   acm_certificate_arn            = ""
   tags                           = var.tags
-  stable_weight                    = var.stable_weight
-  canary_weight                   = var.canary_weight
+  blue_weight                    = var.blue_weight
+  green_weight                   = var.green_weight
 }
 
 module "iam" {
@@ -94,10 +94,10 @@ module "iam" {
   tags         = var.tags
 }
 
-module "compute-stable" {
+module "compute-blue" {
   source                     = "../../modules/compute"
   project_name               = var.project_name
-  environment                = "${var.environment}-stable"
+  environment                = "${var.environment}-blue"
   app_sg_id                  = module.security-groups.ec2_sg_id
   ec2_instance_profile_name  = module.iam.ec2_instance_profile_name
   root_volume_size           = var.root_volume_size
@@ -108,31 +108,31 @@ module "compute-stable" {
     db_host_secret_arn = module.secrets.rds_secret_arn
     region             = var.aws_region
   })
-  tags                       = var.tags
+  tags                       = merge(var.tags, { Slot = "blue" })
 }
 
-module "asg-stable" {
+module "asg-blue" {
   source                          = "../../modules/asg-scaling"
   project_name                    = var.project_name
-  environment                     = "${var.environment}-stable"
-  launch_template_id              = module.compute-stable.launch_template_id
+  environment                     = "${var.environment}-blue"
+  launch_template_id              = module.compute-blue.launch_template_id
   instance_warmup_seconds = 300
-  #  module.compute-stable.launch_template_latest_version
+  #  module.compute-blue.launch_template_latest_version
   private_app_subnet_ids = module.vpc.private_app_subnets
-  target_group_arn = module.alb-canary.target_group_stable_arn
+  target_group_arn = module.alb.target_group_blue_arn
   asg_min_size = 1 # Ensure at least 1 running here
   asg_max_size = var.asg_max_size
   asg_desired_capacity = 1
   # health_check_type = "ELB"
   # health_check_grace_period = 300
   cpu_target_value = var.target_tracking_target_value
-  tags                            = var.tags
+  tags                            = merge(var.tags, { Slot = "blue" })
 }
 
-module "compute-canary" {
+module "compute-green" {
   source                     = "../../modules/compute"
   project_name               = var.project_name
-  environment                = "${var.environment}-canary"
+  environment                = "${var.environment}-green"
   app_sg_id                  = module.security-groups.ec2_sg_id
   ec2_instance_profile_name  = module.iam.ec2_instance_profile_name
   root_volume_size           = var.root_volume_size
@@ -143,25 +143,25 @@ module "compute-canary" {
     db_host_secret_arn = module.secrets.rds_secret_arn
     region             = var.aws_region
   })
-  tags                       = var.tags
+  tags                       = merge(var.tags, { Slot = "green" })
 }
 
-module "asg-canary" {
+module "asg-green" {
   source                          = "../../modules/asg-scaling"
   project_name                    = var.project_name
-  environment                     = "${var.environment}-canary"
-  launch_template_id              = module.compute-canary.launch_template_id
+  environment                     = "${var.environment}-green"
+  launch_template_id              = module.compute-green.launch_template_id
   instance_warmup_seconds = 300
-  #  module.compute-canary.launch_template_latest_version
+  #  module.compute-green.launch_template_latest_version
   private_app_subnet_ids = module.vpc.private_app_subnets
-  target_group_arn = module.alb-canary.target_group_canary_arn
+  target_group_arn = module.alb.target_group_green_arn
   asg_min_size = 1
   asg_max_size = var.asg_max_size
   asg_desired_capacity = 1
   # health_check_type = "ELB"
   # health_check_grace_period = 300
   cpu_target_value = var.target_tracking_target_value
-  tags                            = var.tags
+  tags                            = merge(var.tags, { Slot = "green" })
 }
 
 module "cloudwatch-rollback" {
@@ -169,11 +169,11 @@ module "cloudwatch-rollback" {
   source         = "../../modules/cloudwatch-rollback"
   project_name   = var.project_name
   environment    = var.environment
-  alb_arn_suffix = module.alb-canary.alb_arn_suffix
+  alb_arn_suffix = module.alb.alb_arn_suffix
 }
 
 resource "aws_ssm_parameter" "deployment_state" {
-  name  = "/${var.project_name}/${var.environment}/canary/deployment-state"
+  name  = "/${var.project_name}/${var.environment}/green/deployment-state"
   type  = "String"
   value = "SUCCEEDED"
   lifecycle { ignore_changes = [value] }
@@ -183,9 +183,9 @@ module "release-controller" {
   source = "../../modules/release-controller"
   project_name = var.project_name
   environment = var.environment
-  listener_arn = module.alb-canary.alb_arn
-  stable_tg_arn = module.alb-canary.target_group_stable_arn
-  canary_tg_arn = module.alb-canary.target_group_canary_arn
+  listener_arn = module.alb.alb_arn
+  blue_tg_arn = module.alb.target_group_blue_arn
+  green_tg_arn = module.alb.target_group_green_arn
 }
 
 module "rollback-safety" {

@@ -1,20 +1,22 @@
 import os
 import boto3
+import json
 
 elbv2 = boto3.client('elbv2')
 
 def handler(event, context):
     listener_arn = os.environ['LISTENER_ARN']
-    stable_tg_arn = os.environ['STABLE_TG_ARN']
-    canary_tg_arn = os.environ['CANARY_TG_ARN']
+    blue_tg_arn = os.environ['BLUE_TG_ARN']
+    green_tg_arn = os.environ['GREEN_TG_ARN']
     
-    stable_weight = event.get('stable_weight', 100)
-    canary_weight = event.get('canary_weight', 0)
+    weights = event.get('weights', {})
+    blue_weight = weights.get('blue', 100)
+    green_weight = weights.get('green', 0)
     
-    if stable_weight + canary_weight != 100:
+    if blue_weight + green_weight != 100:
         raise ValueError("Weights must sum to 100")
         
-    print(f"Shifting traffic: Stable={stable_weight}, Canary={canary_weight}")
+    print(f"Shifting traffic: Blue={blue_weight}, Green={green_weight}")
     
     elbv2.modify_listener(
         ListenerArn=listener_arn,
@@ -23,12 +25,12 @@ def handler(event, context):
                 'Type': 'forward',
                 'ForwardConfig': {
                     'TargetGroups': [
-                        {'TargetGroupArn': stable_tg_arn, 'Weight': stable_weight},
-                        {'TargetGroupArn': canary_tg_arn, 'Weight': canary_weight}
+                        {'TargetGroupArn': blue_tg_arn, 'Weight': blue_weight},
+                        {'TargetGroupArn': green_tg_arn, 'Weight': green_weight}
                     ]
                 }
             }
         ]
     )
     
-    return {"status": "success", "stable": stable_weight, "canary": canary_weight}
+    return {"status": "success", "blue": blue_weight, "green": green_weight}

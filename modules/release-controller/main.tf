@@ -56,8 +56,8 @@ resource "aws_lambda_function" "this" {
   environment {
     variables = {
       LISTENER_ARN   = var.listener_arn
-      STABLE_TG_ARN  = var.stable_tg_arn
-      CANARY_TG_ARN  = var.canary_tg_arn
+      STABLE_TG_ARN  = var.blue_tg_arn
+      CANARY_TG_ARN  = var.green_tg_arn
     }
   }
 }

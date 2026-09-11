@@ -1,9 +1,16 @@
 #!/bin/bash
 set -e
+exec > >(tee -a /var/log/user-data.log) 2>&1
 
 # 1. Install packages
 dnf update -y
+sysctl -w vm.max_map_count=262144
+echo "vm.max_map_count=262144" >> /etc/sysctl.conf
+
 dnf install -y docker awscli jq amazon-cloudwatch-agent
+curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
 
 # 2. Enable and start docker
 systemctl enable --now docker
@@ -11,15 +18,16 @@ systemctl enable --now docker
 # 3. Add ec2-user to docker group
 usermod -aG docker ec2-user
 
-# 4. Enable amazon-ssm-agent
+# 4. Enable amazon-ssm-agent and cloudwatch agent
 systemctl enable --now amazon-ssm-agent
+systemctl enable --now amazon-cloudwatch-agent
 
 # 5. Create directories
 mkdir -p /opt/octabyte-nithin/bin /opt/octabyte-nithin/compose /var/log/octabyte-nithin
 chmod 0755 /opt/octabyte-nithin/bin /opt/octabyte-nithin/compose /var/log/octabyte-nithin
 
 # 6. Write deploy.sh
-cat << 'EOF' > /opt/octabyte-nithin/bin/deploy.sh
+cat << 'INNER_EOF' > /opt/octabyte-nithin/bin/deploy.sh
 #!/bin/bash
 set -e
 exec > >(tee -a /var/log/octabyte-nithin/deploy.log) 2>&1
@@ -39,7 +47,6 @@ fi
 echo "Deploying $IMAGE_URI"
 
 ECR_REGISTRY=$(echo "$IMAGE_URI" | cut -d/ -f1)
-# ECR registry format is account_id.dkr.ecr.region.amazonaws.com
 REGION=$(echo "$ECR_REGISTRY" | cut -d. -f4)
 
 aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
@@ -47,15 +54,37 @@ aws ecr get-login-password --region "$REGION" | docker login --username AWS --pa
 DB_SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id ${db_host_secret_arn} --region ${region} --query SecretString --output text)
 DB_HOST=$(echo "$DB_SECRET_JSON" | jq -r '.host // empty')
 DB_PASS=$(echo "$DB_SECRET_JSON" | jq -r '.password // empty')
-DB_USER=$(aws ssm get-parameter --name "/octabyte-nithin/db/username" --with-decryption --region ${region} --query Parameter.Value --output text 2>/dev/null || echo "admin")
 DB_NAME=$(echo "$DB_SECRET_JSON" | jq -r '.dbname // empty')
+DB_USER=$(aws ssm get-parameter --name "/octabyte-nithin/db/username" --with-decryption --region ${region} --query Parameter.Value --output text 2>/dev/null || echo "admin")
 
-cat << INNER_EOF > /opt/octabyte-nithin/compose/.env.runtime
-DB_HOST=$DB_HOST
-DB_PASS=$DB_PASS
-DB_USER=$DB_USER
-DB_NAME=$DB_NAME
-INNER_EOF
+cat << RUNTIME_EOF > /opt/octabyte-nithin/compose/.env.runtime
+DATABASE_HOST=$DB_HOST
+DATABASE_PASSWORD=$DB_PASS
+DATABASE_USERNAME=$DB_USER
+DATABASE_NAME=$DB_NAME
+DATABASE_PORT=5432
+RUNTIME_EOF
+
+# Write nginx config
+mkdir -p /opt/octabyte-nithin/compose/nginx/sites-enabled
+cat << NGINX_EOF > /opt/octabyte-nithin/compose/nginx/sites-enabled/flask_project.conf
+upstream app {
+    server app:8000;
+}
+server {
+    listen 80;
+    charset utf-8;
+    location /static {
+        alias /static/;
+    }
+    location / {
+        proxy_pass http://app;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+}
+NGINX_EOF
 
 # Save atomic rollback records before starting
 if [ -f /opt/octabyte-nithin/compose/docker-compose.aws.yml ]; then
@@ -66,26 +95,37 @@ if [ -f /opt/octabyte-nithin/current-image-uri ]; then
 fi
 echo "$IMAGE_URI" > /opt/octabyte-nithin/current-image-uri
 
-cat << INNER_EOF > /opt/octabyte-nithin/compose/docker-compose.aws.yml
+cat << COMPOSE_EOF > /opt/octabyte-nithin/compose/docker-compose.aws.yml
 services:
-  app:
-    image: $IMAGE_URI
-    env_file: .env.runtime
-    ports:
-      - "5000:5000"
-    restart: always
   nginx:
-    image: nginx:latest
+    image: nginx:alpine
     ports:
       - "80:80"
     depends_on:
       - app
-    restart: always
-INNER_EOF
+    networks:
+      - prod_network
+    volumes:
+      - /opt/octabyte-nithin/compose/nginx/sites-enabled:/etc/nginx/conf.d
+
+  app:
+    image: PLACEHOLDER_IMAGE
+    env_file: .env.runtime
+    expose:
+      - "8000"
+    networks:
+      - prod_network
+
+networks:
+  prod_network:
+    driver: bridge
+COMPOSE_EOF
+
+sed -i "s|PLACEHOLDER_IMAGE|$IMAGE_URI|g" /opt/octabyte-nithin/compose/docker-compose.aws.yml
 
 cd /opt/octabyte-nithin/compose
-docker compose -f docker-compose.aws.yml pull
-docker compose -f docker-compose.aws.yml up -d --remove-orphans
+docker-compose -f docker-compose.aws.yml pull
+docker-compose -f docker-compose.aws.yml up -d --remove-orphans
 
 # Healthcheck loop
 echo "Waiting for healthcheck on port 80..."
@@ -98,11 +138,11 @@ for i in {1..30}; do
 done
 echo "Healthcheck failed"
 exit 1
-EOF
+INNER_EOF
 chmod +x /opt/octabyte-nithin/bin/deploy.sh
 
 # 7. Write rollback.sh
-cat << 'EOF' > /opt/octabyte-nithin/bin/rollback.sh
+cat << 'INNER_EOF' > /opt/octabyte-nithin/bin/rollback.sh
 #!/bin/bash
 set -e
 exec > >(tee -a /var/log/octabyte-nithin/rollback.log) 2>&1
@@ -118,13 +158,11 @@ echo "Rolling back to $PREVIOUS_IMAGE"
 cp /opt/octabyte-nithin/compose/previous-compose.yml /opt/octabyte-nithin/compose/docker-compose.aws.yml
 
 cd /opt/octabyte-nithin/compose
-docker compose -f docker-compose.aws.yml up -d --remove-orphans
+docker-compose -f docker-compose.aws.yml up -d --remove-orphans
 
 # Restore state files
 mv /opt/octabyte-nithin/previous-image-uri /opt/octabyte-nithin/current-image-uri
 echo "Rollback completed."
-EOF
+INNER_EOF
 chmod +x /opt/octabyte-nithin/bin/rollback.sh
 
-# 8. Start CloudWatch agent
-systemctl enable --now amazon-cloudwatch-agent

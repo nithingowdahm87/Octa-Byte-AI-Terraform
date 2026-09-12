@@ -130,7 +130,7 @@ docker-compose -f docker-compose.aws.yml up -d --remove-orphans
 # Healthcheck loop
 echo "Waiting for healthcheck on port 80..."
 for i in {1..30}; do
-  if curl -s http://localhost:80/health >/dev/null; then
+  if curl -sf http://localhost:80/health >/dev/null; then
     echo "Healthcheck passed"
     exit 0
   fi

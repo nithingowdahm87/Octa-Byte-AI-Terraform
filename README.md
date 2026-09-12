@@ -1,59 +1,55 @@
-# OctaByte-Nithin Infrastructure (Terraform)
+# Octa Byte AI Infrastructure & Deployment
 
-This repository provisions the secure, VPC-isolated infrastructure for the OctaByte-Nithin project.
+This repository contains the Terraform infrastructure code and CI/CD documentation for the Octa Byte AI assessment.
 
-## Architecture
+## Repository Structure
+- **application/** (Application Code & GitHub Actions CI/CD)
+- **terraform/** (Infrastructure as Code)
+  - `bootstrap/` - Terraform backend setup (S3 + DynamoDB)
+  - `modules/` - Reusable Terraform modules
+  - `environments/staging/` - Staging Environment
+  - `environments/production/` - Production Environment
 
-- **Staging VPC (10.10.0.0/16)**: Single ASG, isolated test environment.
-- **Production VPC (10.20.0.0/16)**: Canary release environment containing two Auto Scaling Groups (Stable and Canary).
+## How to Set Up and Run the Infrastructure
+1. **Prerequisites:**
+   - AWS CLI configured with administrator access.
+   - Terraform (>= 1.5.0)
+   - A GitHub repository with OIDC configured for AWS.
 
-### Real Canary Deployment
+2. **Bootstrap Backend:**
+   ```bash
+   cd terraform/bootstrap
+   terraform init && terraform apply -auto-approve
+   ```
 
-Unlike a Blue/Green cutover, this environment performs a true Canary release:
-- `Stable` ASG and `Canary` ASG receive independent AWS Lambda-controlled traffic weights (e.g. 50/50).
-- The `release-controller` Lambda adjusts ALB Listener Rules, preventing Terraform state drift during live traffic shifts.
-- If CloudWatch Composite Alarms detect elevated 5XX errors or latency during the 5-minute canary window, an SNS-triggered `rollback-safety` Lambda automatically reverts weights to `100/0` instantly.
+3. **Deploy Staging:**
+   ```bash
+   cd terraform/environments/staging
+   terraform init
+   terraform apply -auto-approve
+   ```
 
-### EC2 Bootstrap (Immutable Deployment)
+4. **Deploy Production:**
+   ```bash
+   cd terraform/environments/production
+   terraform init
+   terraform apply -auto-approve
+   ```
 
-EC2 instances use **Amazon Linux 2023** dynamically resolved via SSM Parameter Store.
-`user-data` uses `dnf` to install `docker`, `amazon-cloudwatch-agent`, and `amazon-ssm-agent`.
-Images are deployed exclusively by their immutable `sha256` digest via VPC endpoints, removing the need for SSH access.
+## Architecture Decisions
+- **Immutable Infrastructure:** EC2 instances are created via Auto Scaling Groups and Launch Templates. No direct SSH access is needed; SSM is used for deployment and access.
+- **Canary Deployments (Production):** A Blue/Green ASG architecture was implemented using an active/inactive slot system. The CI/CD pipeline deploys the new Docker container to the inactive slot, shifts ALB weights to 50/50, and monitors CloudWatch composite alarms. If errors/latency spike, it automatically shifts traffic back to the healthy slot.
+- **Database:** Amazon RDS for PostgreSQL in a private subnet, utilizing AWS Secrets Manager for credential rotation.
 
-## Runbook
+## Security Considerations
+- **No Public Instances:** All EC2 instances and RDS databases reside in private subnets. Only the ALB resides in the public subnet.
+- **Least Privilege IAM:** Roles are strictly scoped. GitHub Actions uses OIDC (no hardcoded keys). EC2 Instance Profiles only have access to specific ECR repositories, SSM parameters, and Secrets.
+- **Encryption:** KMS is used for EBS volumes, RDS, Secrets Manager, and SSM Parameters.
+- **Security Scanning:** Trivy, Gitleaks, and OWASP ZAP are integrated into the GitHub Actions CI/CD pipeline.
 
-### Terraform Bootstrap
-```bash
-make bootstrap-init
-make bootstrap-apply
-```
+## Cost Optimization Measures
+- **Graviton Instances:** `t4g.micro` / `t4g.small` ARM-based Graviton instances are used for the application tier to significantly reduce compute costs.
+- **Auto Scaling:** Minimum bounds are kept low (e.g., 1 per slot) and automatically scale based on CPU utilization metrics to ensure capacity closely tracks demand.
+- **Lifecycle Policies:** ECR is configured to only retain the 5 most recent container images, keeping storage costs minimal.
+- **S3 Tiering:** State buckets are configured to transition non-current versions to cheaper storage tiers.
 
-### Staging Apply
-```bash
-ENV=staging make init
-ENV=staging make plan
-ENV=staging make apply
-```
-
-### Manual Rollback
-If a deployment degrades and the auto-rollback safety net fails:
-1. Log into AWS Console -> Lambda.
-2. Invoke `octabyte-nithin-production-release-controller` with:
-   `{"environment": "production", "stable_weight": 100, "canary_weight": 0, "deployment_id": "manual"}`
-3. The active slot (tracked in `/octabyte-nithin/production/active-slot`) will instantly receive 100% traffic.
-
-## Environments
-
-### Staging (Free Tier)
-The staging environment is designed to minimize costs and fit within the AWS Free Tier. It uses:
-- A single `t3.micro` EC2 instance in the default VPC
-- Local Postgres (via Docker, if added) or mock database rather than RDS
-- A single Elastic IP (implicitly public IP via EC2) rather than an ALB
-- No ASG or NAT Gateways
-
-### Production
-The production environment uses a highly available architecture:
-- Custom VPC with public and private subnets across multiple AZs
-- Application Load Balancer (ALB)
-- Auto Scaling Group (ASG)
-- Amazon RDS for PostgreSQL

@@ -52,7 +52,7 @@ REGION=$(echo "$ECR_REGISTRY" | cut -d. -f4)
 aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
 DB_SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id ${db_host_secret_arn} --region ${region} --query SecretString --output text)
-DB_HOST=$(echo "$DB_SECRET_JSON" | jq -r '.host // empty')
+DB_HOST="${db_endpoint}"
 DB_PASS=$(echo "$DB_SECRET_JSON" | jq -r '.password // empty')
 DB_NAME=$(echo "$DB_SECRET_JSON" | jq -r '.dbname // empty')
 DB_USER=$(aws ssm get-parameter --name "/octabyte-nithin/db/username" --with-decryption --region ${region} --query Parameter.Value --output text 2>/dev/null || echo "admin")

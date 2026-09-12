@@ -26,6 +26,7 @@ module "security-groups" {
   project_name = var.project_name
   environment  = var.environment
   vpc_id       = module.vpc.vpc_id
+  application_port = var.application_port
   tags         = var.tags
 }
 
@@ -108,7 +109,7 @@ module "compute-blue" {
   user_data                  = templatefile("${path.module}/user-data.sh.tftpl", {
     db_host_secret_arn = module.secrets.rds_secret_arn
     region             = var.aws_region
-    db_endpoint        = module.rds.db_endpoint
+    db_endpoint        = module.rds.rds_endpoint
   })
   tags                       = merge(var.tags, { Slot = "blue" })
 }
@@ -144,7 +145,7 @@ module "compute-green" {
   user_data                  = templatefile("${path.module}/user-data.sh.tftpl", {
     db_host_secret_arn = module.secrets.rds_secret_arn
     region             = var.aws_region
-    db_endpoint        = module.rds.db_endpoint
+    db_endpoint        = module.rds.rds_endpoint
   })
   tags                       = merge(var.tags, { Slot = "green" })
 }

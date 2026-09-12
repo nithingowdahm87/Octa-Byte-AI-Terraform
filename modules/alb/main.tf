@@ -15,12 +15,16 @@ resource "aws_lb" "main" {
 }
 
 resource "aws_lb_target_group" "app" {
-  name                 = "${var.project_name}-${var.environment}-tg"
+  name_prefix          = "app-"
   port                 = var.application_port
   protocol             = "HTTP"
   vpc_id               = var.vpc_id
   target_type          = "instance"
   deregistration_delay = 30
+
+  lifecycle {
+    create_before_destroy = true
+  }
 
   health_check {
     enabled             = true

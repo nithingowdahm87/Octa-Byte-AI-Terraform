@@ -14,12 +14,16 @@ resource "aws_lb" "main" {
 }
 
 resource "aws_lb_target_group" "blue" {
-  name                 = "tg-blue-${var.environment}"
+  name_prefix          = "blue-"
   port                 = var.application_port
   protocol             = "HTTP"
   vpc_id               = var.vpc_id
   target_type          = "instance"
   deregistration_delay = 30
+
+  lifecycle {
+    create_before_destroy = true
+  }
 
   health_check {
     enabled             = true
@@ -37,12 +41,16 @@ resource "aws_lb_target_group" "blue" {
 }
 
 resource "aws_lb_target_group" "green" {
-  name                 = "tg-green-${var.environment}"
+  name_prefix          = "green-"
   port                 = var.application_port
   protocol             = "HTTP"
   vpc_id               = var.vpc_id
   target_type          = "instance"
   deregistration_delay = 30
+
+  lifecycle {
+    create_before_destroy = true
+  }
 
   health_check {
     enabled             = true
@@ -90,9 +98,6 @@ resource "aws_lb_listener" "http" {
       }
     }
   }
-  lifecycle {
-    ignore_changes = [default_action]
-  }
 }
 
 resource "aws_lb_listener" "https" {
@@ -116,8 +121,5 @@ resource "aws_lb_listener" "https" {
         weight = var.green_weight
       }
     }
-  }
-  lifecycle {
-    ignore_changes = [default_action]
   }
 }

@@ -1,4 +1,5 @@
 variable "aws_region" { default = "ap-south-1" }
+variable "application_port" { default = 80 }
 variable "project_name" { default = "octabyte-nithin" }
 variable "environment" { default = "staging" }
 variable "instance_type" { default = "m7i-flex.large" }
